@@ -86,6 +86,28 @@ and a Pro-style workspace shell. No gate, no seat check — it is a UI mode, not
 Exit criteria: toggle works, all seven screens render from live IPC data, floor mode
 regression-free (`npm run typecheck`, manual click-through).
 
+### Status — Track A
+
+Built on `work` in `8921d08` (shell, `uiMode` wiring, i18n) plus the hire-queue
+section on the Temps screen. All six items above are done:
+
+- `uiMode` lives in all three `HarnessConfig` declarations (`store/config.ts`,
+  `main/config.ts`, `preload/index.ts`) so Settings writes and `config:update`
+  round-trip without one of them dropping the field.
+- `App.tsx` switches on it as a **sibling** of the floor block, not a wrapper
+  around it — floor mode renders byte-identical markup, which is what the
+  "regression-free" half of the exit criteria actually needs.
+- `MemoryTab` is exported rather than copied, so the Memory screen and the
+  Command Center's memory tab are one implementation.
+- `useRestoreTeam` is mounted in the shell as well as `AgentStrip`. The floor
+  strip is hidden while the shell is up, and the hook's boot auto-restore is
+  driven from whichever component is mounted — without this the restore would
+  have silently stopped firing at startup.
+
+Not yet done: the manual click-through. `npm run typecheck`, `npm run build` and
+the full suite are green (849/821/17/11 — the 17 are the pre-existing symlink
+and worktree environment failures), but nothing here has been eyeballed running.
+
 ## Track B — Teams over Tailscale
 
 Model: **join codes, not accounts.** The relay never sees provider keys; it only routes

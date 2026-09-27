@@ -1193,7 +1193,13 @@
     "uncapped": "بلا سقف",
     "preserved": "أشجار العمل المحفوظة ({{count}})",
     "preservedIntro": "عمّال منتهون بقيت في أشجار عملهم أعمال لم تُدمَج — تُحفَظ (ولا تُحذَف تلقائيًا أبدًا) وتُستَعاد تلقائيًا بمجرد وصول العمل إلى فرعه الأساس.",
-    "keptAgo": "حُفظت منذ {{age}}"
+    "keptAgo": "حُفظت منذ {{age}}",
+    "hireQueue": "قائمة التوظيف ({{count}})",
+    "hireQueueProgress": "تمت مراجعة {{current}} من {{total}}",
+    "hireQueueIntro": "توظيفات مستوردة بانتظار مراجعتك — كل واحدة تحتاج إلى إطلاق أو تخطٍّ صريحين.",
+    "hireQueueNext": "التالي: {{name}}",
+    "hireQueueMore": "+{{count}} أخرى",
+    "hireQueueReview": "مراجعة"
   },
   "memoryGraph": {
     "topics": "المواضيع",

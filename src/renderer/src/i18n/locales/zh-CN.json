@@ -1193,7 +1193,13 @@
     "uncapped": "无上限",
     "preserved": "保留的工作树（{{count}}）",
     "preservedIntro": "已完成工人的工作树中保留着未整合的工作——保留（绝不自动丢弃），并在工作合入其基础分支后自动回收。",
-    "keptAgo": "{{age}} 前保留"
+    "keptAgo": "{{age}} 前保留",
+    "hireQueue": "招募队列（{{count}}）",
+    "hireQueueProgress": "已审 {{current}} / {{total}}",
+    "hireQueueIntro": "已导入、等你过目的招募——每一条都需要明确的启动或跳过。",
+    "hireQueueNext": "下一个：{{name}}",
+    "hireQueueMore": "+{{count}} 更多",
+    "hireQueueReview": "查看"
   },
   "memoryGraph": {
     "topics": "主题",

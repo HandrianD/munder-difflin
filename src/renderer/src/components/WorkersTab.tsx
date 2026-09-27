@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { PixelButton } from './PixelButton';
 import { useStore } from '@/store/store';
+import { hireQueueProgress } from '@shared/hireQueue';
 
 /**
  * WORKERS — live god-triggered ephemeral Slack workers (the Phase-1 spawn loop):
@@ -9,6 +10,11 @@ import { useStore } from '@/store/store';
  * tab reads main's `liveWorkers` map (via workers:list) so a human can SEE what's
  * running and stop one by hand; it also surfaces worktrees PRESERVED at teardown
  * (held until their work integrates, then auto-GC'd) so nothing silently piles up.
+ *
+ * The hire queue sits above both because this is the "temps" view: imported hires
+ * queued for a human pass are the other half of that story, and until now they
+ * were only visible from inside the Add Agent modal — a queue you cannot see
+ * cannot be noticed when it is stuck.
  */
 
 // Types flow from main's `workers:list` handler via the typed `window.cth` global
@@ -67,6 +73,8 @@ function StatusBadge({ w }: { w: WorkerSnapshot }) {
 export function WorkersTab() {
   const { t } = useTranslation();
   const godName = useStore((s) => s.agents.find((a) => a.isGod)?.name) ?? 'the orchestrator';
+  const hireQueue = useStore((s) => s.hireQueue);
+  const setAddAgentOpen = useStore((s) => s.setAddAgentOpen);
   const [data, setData] = useState<WorkersData | null>(null);
   const [stopping, setStopping] = useState<Record<string, boolean>>({});
 
@@ -90,9 +98,55 @@ export function WorkersTab() {
   const live = data?.live ?? [];
   const preserved = data?.preserved ?? [];
   const max = data?.maxWorkers ?? 4;
+  const nextHire = hireQueue.pending[0];
+  const hireProgress = hireQueueProgress(hireQueue);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: '12px 14px 16px', overflow: 'auto' }}>
+      {nextHire && (
+        <div>
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+            <span style={sectionHead}>{t('workersTab.hireQueue', { count: hireQueue.pending.length })}</span>
+            {hireProgress && (
+              <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 11, color: 'var(--cth-ink-700)' }}>
+                {t('workersTab.hireQueueProgress', { current: hireProgress.current, total: hireProgress.total })}
+              </span>
+            )}
+          </div>
+          <p style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 11, color: 'var(--cth-ink-700)', margin: '2px 0 8px' }}>
+            {t('workersTab.hireQueueIntro')}
+          </p>
+          <div style={card}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{
+                  fontFamily: 'var(--cth-font-ui)', fontSize: 12, fontWeight: 600, color: 'var(--cth-ink-900)',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                }}>
+                  {t('workersTab.hireQueueNext', { name: nextHire.name })}
+                </div>
+                {nextHire.description && (
+                  <div style={{
+                    fontFamily: 'var(--cth-font-ui)', fontSize: 11, color: 'var(--cth-ink-700)',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                  }}>{nextHire.description}</div>
+                )}
+              </div>
+              <PixelButton onClick={() => setAddAgentOpen(true)}>
+                {t('workersTab.hireQueueReview')}
+              </PixelButton>
+            </div>
+            <div style={metaRow}>
+              {nextHire.provider && <span>{nextHire.provider}</span>}
+              {nextHire.model && <span>{nextHire.model}</span>}
+              {hireQueue.pending.length > 1 && (
+                <span>{t('workersTab.hireQueueMore', { count: hireQueue.pending.length - 1 })}</span>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div>
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
           <span style={sectionHead}>{t('workersTab.liveWorkers')}</span>

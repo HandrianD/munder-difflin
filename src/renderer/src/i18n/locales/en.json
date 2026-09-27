@@ -1193,7 +1193,13 @@
     "uncapped": "uncapped",
     "preserved": "Preserved worktrees ({{count}})",
     "preservedIntro": "Finished workers whose worktree held un-integrated work — kept (never auto-discarded) and auto-reclaimed once the work lands in its base branch.",
-    "keptAgo": "kept {{age}} ago"
+    "keptAgo": "kept {{age}} ago",
+    "hireQueue": "Hire queue ({{count}})",
+    "hireQueueProgress": "{{current}} / {{total}} reviewed",
+    "hireQueueIntro": "Imported hires waiting for a human pass — each still needs an explicit spawn or skip.",
+    "hireQueueNext": "next: {{name}}",
+    "hireQueueMore": "+{{count}} more",
+    "hireQueueReview": "review"
   },
   "memoryGraph": {
     "topics": "topics",
