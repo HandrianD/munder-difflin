@@ -1075,7 +1075,10 @@ function ArchivedSection() {
 
 // ─── Memory tab ──────────────────────────────────────────────────────────────
 
-function MemoryTab({ godId, who: controlledWho, onWho }: { godId: string; who?: string; onWho?: (id: string) => void }) {
+/** Exported for the workspace shell's Memory screen — the docked Command Center
+ *  mounts it as a tab, the shell mounts it as a whole screen. Same component,
+ *  so the semantic search and the memory file viewer stay one implementation. */
+export function MemoryTab({ godId, who: controlledWho, onWho }: { godId: string; who?: string; onWho?: (id: string) => void }) {
   const { t } = useTranslation();
   const agents = useStore((s) => s.agents);
   // Selection is controllable from the graph tab; falls back to local state.

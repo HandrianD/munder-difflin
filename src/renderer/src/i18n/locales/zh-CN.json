@@ -1405,5 +1405,25 @@
     "viewSource": "查看源码",
     "loading": "正在加载图片…",
     "decodeFailed": "无法解码此图片——文件可能已损坏或扩展名有误"
+  },
+  "workspace": {
+    "title": "工作区",
+    "nav": {
+      "agents": "成员",
+      "tasks": "任务",
+      "inbox": "收件箱",
+      "automations": "自动化",
+      "memory": "记忆",
+      "capabilities": "能力",
+      "temps": "临时工"
+    },
+    "inboxPending": "{{count}} 项等你处理",
+    "roster": "名册",
+    "emptyRoster": "名册里还没有成员。",
+    "emptyRosterSub": "添加一个，它会出现在这里。",
+    "booting": "正在唤醒办公室...",
+    "noAgentSelected": "未选择成员",
+    "noAgentSelectedSub": "从名册里选一个人，打开他的终端和命令。",
+    "noGodMemory": "总管尚未启动"
   }
 }

@@ -29,6 +29,7 @@ import { SidebarSplitter } from '@/components/SidebarSplitter';
 import { acquireTerminal, notifyThemeChangeAll } from '@/components/terminalPool';
 import { FullscreenTerminal } from '@/components/FullscreenTerminal';
 import { TaskDetailOverlay } from '@/components/TaskDetailOverlay';
+import { WorkspaceShell } from '@/components/workspace/WorkspaceShell';
 import { IdePanel } from '@/ide/IdePanel';
 import { useHoldOptionToTalk } from '@/freeflow/holdOption';
 import brandLogo from '@brand/logo.png?url';
@@ -268,6 +269,11 @@ export function App() {
     return <HivePicker config={config} onOpenCurrent={() => setHiveOpened(true)} />;
   }
 
+  // UI mode: the pixel office floor (default) or the Pro-style workspace shell.
+  // Derived, never stored here — config.uiMode is the single source of truth so
+  // Settings and the titlebar toggle can't drift apart.
+  const uiMode: 'floor' | 'workspace' = config.uiMode === 'workspace' ? 'workspace' : 'floor';
+
   return (
     <div style={{
       display: 'flex', flexDirection: 'column',
@@ -346,6 +352,29 @@ export function App() {
         </button>
         {/* v0.3.4: the IDE button moved to agent level — every agent's header
             (sidebar detail, god Command Center, fullscreen) carries it. */}
+        {/* UI mode: pixel office floor ↔ Pro-style workspace shell. Persisted
+            through config.uiMode, so it survives restarts and Settings writes
+            never clobber it (writeConfig merges the whole partial). It is a UI
+            mode, not a tier — no gate, no seat check. */}
+        <button
+          className="cth-titlebar-nodrag cth-tip"
+          onClick={() => {
+            const next = uiMode === 'workspace' ? 'floor' : 'workspace';
+            void window.cth.updateConfig({ uiMode: next });
+          }}
+          data-tip={uiMode === 'workspace' ? 'Office floor' : 'Workspace'}
+          aria-label={uiMode === 'workspace' ? 'Switch to the office floor' : 'Switch to the workspace'}
+          style={{
+            display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+            width: 28, height: 28, padding: 0,
+            background: uiMode === 'workspace' ? 'var(--cth-mint)' : 'var(--cth-paper-100)',
+            boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)',
+            border: 'none', borderRadius: 2, cursor: 'pointer',
+            color: 'var(--cth-ink-900)'
+          }}
+        >
+          <LayoutGlyph />
+        </button>
         <button
           className="cth-titlebar-nodrag cth-settings-btn cth-tip"
           onClick={() => { setSettingsSection(undefined); setSettingsOpen(true); }}
@@ -392,6 +421,20 @@ export function App() {
 
       </div>
 
+      {/* uiMode: the two shells are siblings, not a wrapper around the floor —
+          floor mode renders exactly the markup it did before this switch, so a
+          regression there can only come from the shared chrome above. */}
+      {uiMode === 'workspace' ? (
+        <div style={{
+          flex: 1, minHeight: 0,
+          display: 'flex',
+          padding: 16,
+          gap: 0
+        }}>
+          <WorkspaceShell config={config} />
+        </div>
+      ) : (
+      <>
       <div style={{
         flex: 1, minHeight: 0,
         display: 'flex',
@@ -478,6 +521,8 @@ export function App() {
       </div>
 
       <AgentStrip config={config} />
+      </>
+      )}
 
       {addAgentOpen && (
         <AddAgentModal
@@ -548,6 +593,19 @@ function CollapseGlyph() {
   return (
     <Glyph>
       <path d="M3 6.2h3.2V3M13 6.2H9.8V3M3 9.8h3.2V13M13 9.8H9.8V13" />
+    </Glyph>
+  );
+}
+
+/** A rectangle split by a vertical rule — the workspace shell's nav rail. The
+ *  counterpart (a rectangle split by a grid of desks) is the floor, but at 16px
+ *  a desk grid reads as noise beside the settings wrench; the rail is the one
+ *  shape that says "panels" without competing with its neighbours. */
+function LayoutGlyph() {
+  return (
+    <Glyph>
+      <rect x="2.5" y="3" width="11" height="10" rx="1" />
+      <path d="M6.5 3v10" />
     </Glyph>
   );
 }

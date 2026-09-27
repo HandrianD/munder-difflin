@@ -318,6 +318,9 @@ export interface HarnessConfig {
    *  `tvShowOffices` is on; otherwise the office theme is used. Unbuilt show
    *  themes fall back to 'office' in the loader. */
   officeTheme?: 'office' | 'friends' | 'brooklyn99' | 'siliconvalley' | 'got' | 'hogwarts';
+  /** App chrome layout: the pixel office floor (default) or the workspace shell
+   *  (left nav + seven screens). A UI mode, not a tier — no seat, no gate. */
+  uiMode?: 'floor' | 'workspace';
   /** Per-CLI-provider local/self-hosted base URL (Ollama/LM Studio/vLLM, …) for the
    *  OpenCode/Crush/pi/qwen engines; applied at spawn (config-injection or proxy
    *  upstream). API KEYS are NOT stored here — they live write-only in the secret
@@ -450,6 +453,8 @@ const DEFAULTS: HarnessConfig = {
   multiWindow: true,
   tvShowOffices: false,
   officeTheme: 'office',
+  // Pixel office floor is the default shell; the workspace shell is opt-in.
+  uiMode: 'floor',
   slackEnabled: false,
   slackSigningSecret: undefined,
   slackBotToken: undefined,

@@ -1405,5 +1405,25 @@
     "viewSource": "view source",
     "loading": "loading image…",
     "decodeFailed": "could not decode this image — the file may be corrupt or misnamed"
+  },
+  "workspace": {
+    "title": "WORKSPACE",
+    "nav": {
+      "agents": "Agents",
+      "tasks": "Tasks",
+      "inbox": "Inbox",
+      "automations": "Automations",
+      "memory": "Memory",
+      "capabilities": "Capabilities",
+      "temps": "Temps"
+    },
+    "inboxPending": "{{count}} waiting for you",
+    "roster": "ROSTER",
+    "emptyRoster": "No agents on the roster yet.",
+    "emptyRosterSub": "Add one and it will show up here.",
+    "booting": "Waking the floor...",
+    "noAgentSelected": "NO AGENT SELECTED",
+    "noAgentSelectedSub": "Pick someone from the roster to open their terminal and commands.",
+    "noGodMemory": "THE ORCHESTRATOR IS NOT UP YET"
   }
 }
