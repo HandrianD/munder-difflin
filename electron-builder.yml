@@ -6,9 +6,10 @@ copyright: Copyright © 2026 Chaitanya Giri
 # releases). The release workflow still uploads assets itself (--publish never);
 # this block only stamps app-update.yml into the packaged app so the updater
 # knows which repo to poll.
+# PRIVATE FORK: polls THIS fork's releases only — never upstream.
 publish:
   provider: github
-  owner: chaitanyagiri
+  owner: HandrianD
   repo: munder-difflin
 
 # Bake the update toast's "What's new" list straight into latest*.yml.

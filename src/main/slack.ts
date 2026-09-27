@@ -10,10 +10,10 @@
  *   - on a plain `message` event, strips a leading bot mention and emits the
  *     text via `onMessage`.
  *
- * It also opens a `tunnelmole` tunnel so the local port is reachable from Slack's
- * servers; the tunnel URL is what the user pastes into their Slack app's Event
- * Subscriptions → Request URL. The tunnel is best-effort: the local handler is
- * the security boundary and stays up even if the tunnel can't be established.
+ * It binds 127.0.0.1 and reports that loopback URL; PRIVATE FORK there is no
+ * third-party tunnel, so reaching Slack requires the operator to front the port
+ * themselves (their own reverse proxy). The handler is the security boundary and
+ * stays up either way.
  *
  * Runs in the Electron main process. Deliberately free of any `electron`
  * import so it can be unit-/smoke-tested as a plain Node module.
@@ -21,11 +21,8 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { createHmac, timingSafeEqual } from 'node:crypto';
-// NOTE: `tunnelmole` is an ESM-only package. The Electron main process is bundled
-// as CommonJS, so a static `import` gets externalized into `require('tunnelmole')`
-// and throws ERR_REQUIRE_ESM at load. It is imported dynamically inside
-// `openTunnel()` instead — Rollup preserves dynamic import() in CJS output, which
-// can load ESM. Do not hoist this back to a top-level import.
+// PRIVATE FORK: `tunnelmole` (and `localtunnel` before it) exposed this port to
+// the public internet. Both dependencies are removed; no tunnel call site remains.
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const {
@@ -69,7 +66,7 @@ export interface SlackEventFile {
 type _SlackEventFile = SlackEventFile;
 
 export interface SlackWebhookServerOptions {
-  /** Local TCP port the HTTP server binds to (and the tunnel forwards to). */
+  /** Local TCP port the HTTP server binds to (loopback-only). */
   port: number;
   /** Slack app signing secret (Basic Information → Signing Secret). Required. */
   signingSecret: string;
@@ -106,12 +103,14 @@ export interface SlackInboundMessage {
 const MAX_BODY_BYTES = 1024 * 1024; // 1 MB
 /** Slack's recommended replay window: reject timestamps more than 5 min off. */
 const REPLAY_WINDOW_SECONDS = 60 * 5;
-/** Cap how long we wait for the public tunnel before giving up (server stays up). */
-const TUNNEL_START_TIMEOUT_MS = 10_000;
 
 export class SlackWebhookServer {
   private server: Server | null = null;
+  /** Loopback base URL, or null before `start()`. No third-party tunnel — see `start()`. */
   private tunnelUrl: string | null = null;
+  /** The port actually bound, once `listen()` resolves — the URL we hand out must
+   *  be this one, not the requested one (they differ when the caller asks for 0). */
+  private boundPort = 0;
   private readonly port: number;
   private readonly signingSecret: string;
   private readonly channelId?: string;
@@ -136,11 +135,9 @@ export class SlackWebhookServer {
   }
 
   /**
-   * Bind the local HTTP server, then open a public tunnel to it. The HTTP
-   * handler (the security boundary) is live the instant `listen` resolves; the
-   * tunnel is opened afterwards and is non-fatal — if it can't be established
-   * (offline, loca.lt down, timed out) the server keeps running and we report
-   * the tunnel error without a URL.
+   * Bind the local HTTP server on 127.0.0.1. PRIVATE FORK: no tunnel — the
+   * reported URL is loopback, and exposing it beyond this machine is the
+   * operator's call (their own reverse proxy), never ours.
    */
   async start(): Promise<{ ok: boolean; url?: string; error?: string }> {
     if (this.server) return { ok: false, error: 'already running' };
@@ -151,20 +148,12 @@ export class SlackWebhookServer {
       this.stop();
       return { ok: false, error: `failed to bind port ${this.port}: ${errMsg(e)}` };
     }
-    try {
-      const url = await this.openTunnel();
-      if (!url) throw new Error('tunnelmole returned empty URL');
-      this.tunnelUrl = url;
-      // tunnelmole runs in the background; there is no close handle to wire here.
-      return { ok: true, url };
-    } catch (e) {
-      // Surface the tunnel failure rather than silently returning ok:true with no url.
-      return { ok: false, error: `tunnel unavailable: ${errMsg(e)}` };
-    }
+    const url = `http://127.0.0.1:${this.boundPort || this.port}`;
+    this.tunnelUrl = url;
+    return { ok: true, url };
   }
 
-  /** Close the HTTP server. Idempotent and best-effort.
-   *  Note: tunnelmole has no documented close handle; teardown is best-effort. */
+  /** Close the HTTP server. Idempotent and best-effort. */
   stop(): void {
     this.tunnelUrl = null;
     try { this.server?.close(); } catch { /* noop */ }
@@ -176,23 +165,14 @@ export class SlackWebhookServer {
       const server = createServer((req, res) => this.handleRequest(req, res));
       const onError = (e: Error): void => reject(e);
       server.once('error', onError);
-      server.listen(this.port, () => {
+      // '127.0.0.1' ONLY — never publish an inbound API to every interface.
+      server.listen(this.port, '127.0.0.1', () => {
         server.off('error', onError);
         this.server = server;
+        const addr = server.address();
+        this.boundPort = addr && typeof addr === 'object' ? addr.port : this.port;
         resolve();
       });
-    });
-  }
-
-  private async openTunnel(): Promise<string> {
-    // TODO: optional persistent domain — pass `domain` here when config carries one.
-    // Dynamic import keeps the ESM-only `tunnelmole` out of the CJS require graph.
-    const { tunnelmole } = await import('tunnelmole');
-    return new Promise<string>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('timed out')), TUNNEL_START_TIMEOUT_MS);
-      tunnelmole({ port: this.port })
-        .then((url) => { clearTimeout(timer); resolve(url); })
-        .catch((e) => { clearTimeout(timer); reject(e); });
     });
   }
 

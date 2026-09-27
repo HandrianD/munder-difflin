@@ -44,7 +44,11 @@ import { reduceStatus, clampPercent, isNewer, installerUrl, shouldShowReleaseDro
  *      downgrade is per-check, not a permanent latch.
  */
 
-const REPO = 'chaitanyagiri/munder-difflin';
+// PRIVATE FORK: never point the updater at the upstream project. Everything the
+// updater resolves (release feed, asset URLs, the openRelease prefix guard) is
+// derived from this one constant, so a fork build only ever asks about its own
+// releases and cannot be pulled onto someone else's binary.
+const REPO = 'HandrianD/munder-difflin';
 const CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6h
 const FALLBACK_CACHE_MS = 60 * 60 * 1000;     // 1h between releases/latest polls
 

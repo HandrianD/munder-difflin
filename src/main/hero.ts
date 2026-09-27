@@ -7,13 +7,21 @@
  * instantly and offline, because it sits at the top of a dialog people open to
  * change a folder.
  */
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
-import { getText } from './fetchText';
+import { existsSync, readFileSync } from 'node:fs';
 import { parseHeroPayload, DEFAULT_HERO, type HeroPayload } from '../shared/heroPayload';
+// PRIVATE FORK — the hero payload is compiled in, not fetched. The old build
+// pulled docs/hero.json from the upstream repo over raw.githubusercontent.com
+// every TTL; a private build has no business contacting that host at all. Vite
+// inlines this at build time, so the card renders offline with zero requests.
+import bundledHero from '../../docs/hero.json';
 
-const HERO_URL =
-  'https://raw.githubusercontent.com/chaitanyagiri/munder-difflin/main/docs/hero.json';
+/**
+ * Disabled on purpose: no remote hero payload in a private build.
+ * `loadHero` now serves the bundled copy (or a previously cached one) and never
+ * opens a socket. Kept as an explicit null rather than deleted so the TTL/cache
+ * path below stays readable and the intent is greppable.
+ */
+const HERO_URL: string | null = null;
 /** Plan copy and sponsors change on a human timescale. */
 const TTL_MS = 6 * 60 * 60 * 1000;
 
@@ -30,17 +38,14 @@ export async function loadHero(
     return { hero: cached.hero, fetchedAt: cached.fetchedAt, stale: false };
   }
 
+  // No network path: prefer the cached copy when it validates, else the payload
+  // compiled into this build. Same degradation ladder the fetch path had minus
+  // the fetch — never fatal, never a socket.
   try {
-    const body = await getText(HERO_URL, { timeoutMs: 8000 });
-    // Parse the JSON and the SHAPE separately: valid JSON that is not a hero
-    // payload must still degrade to defaults rather than render as undefined.
-    const hero = parseHeroPayload(JSON.parse(body));
-    const payload = { hero, fetchedAt: Date.now() };
-    try {
-      mkdirSync(dirname(cachePath), { recursive: true });
-      writeFileSync(cachePath, JSON.stringify(payload));
-    } catch { /* cache is an optimisation */ }
-    return { ...payload, stale: false };
+    const bundled = parseHeroPayload(bundledHero);
+    if (bundled) return { hero: bundled, fetchedAt: cached?.fetchedAt ?? 0, stale: cached == null };
+    if (cached) return { hero: cached.hero, fetchedAt: cached.fetchedAt, stale: true };
+    return { hero: DEFAULT_HERO, fetchedAt: 0, stale: true };
   } catch {
     if (cached) return { hero: cached.hero, fetchedAt: cached.fetchedAt, stale: true };
     return { hero: DEFAULT_HERO, fetchedAt: 0, stale: true };

@@ -8,7 +8,7 @@
   "homepage": "https://munderdiffl.in/",
   "repository": {
     "type": "git",
-    "url": "https://github.com/chaitanyagiri/munder-difflin.git"
+    "url": "https://github.com/HandrianD/munder-difflin.git"
   },
   "scripts": {
     "dev": "electron-vite dev",
@@ -49,7 +49,6 @@
     "commit-graph": "^2.4.0",
     "electron-updater": "^6.8.9",
     "i18next": "^26.3.6",
-    "localtunnel": "^2.0.2",
     "monaco-editor": "^0.52.2",
     "node-pty": "^1.0.0",
     "pixi.js": "^8.5.1",
@@ -59,14 +58,12 @@
     "react-i18next": "^17.0.11",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
-    "tunnelmole": "^2.4.0",
     "zustand": "^4.5.5"
   },
   "devDependencies": {
     "@electron/notarize": "^2.5.0",
     "@electron/rebuild": "^3.7.0",
     "@types/better-sqlite3": "^7.6.13",
-    "@types/localtunnel": "^2.0.4",
     "@types/node": "^22.7.5",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.0",

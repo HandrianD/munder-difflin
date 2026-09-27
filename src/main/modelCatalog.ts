@@ -1,27 +1,27 @@
 /**
- * Fetch + cache the REMOTE model catalog.
+ * Load the model catalog — bundled, never fetched.
  *
- * Same shape as the hero payload and the skills catalog: served from cache when
- * fresh, refetched otherwise, and NEVER fatal. A failed fetch falls back to the
- * cached copy, and a missing cache falls back to null — which the renderer reads
- * as "keep the catalog compiled into this build".
+ * Same shape as the hero payload: a cached copy wins when fresh, otherwise the
+ * catalog compiled into this build. NEVER fatal.
  *
- * The point of this file: shipping a model was a build. Now it is an edit to
- * docs/model-catalog.json on main, which every installed copy picks up within
- * the TTL. The baked catalog stays the floor, so the pickers are never empty and
- * never wait on the network.
+ * PRIVATE FORK: the old build polled docs/model-catalog.json on
+ * raw.githubusercontent.com (upstream) every TTL so a model could ship without a
+ * release. A private build has no business contacting that host, so the JSON is
+ * inlined at build time instead — same data, zero sockets. The cache read stays
+ * because an older install may still have a file on disk and it costs nothing to
+ * prefer it.
  */
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
-import { getText } from './fetchText';
+import { existsSync, readFileSync } from 'node:fs';
 import { parseModelCatalog, type ModelCatalog } from '../shared/modelCatalogPayload';
+// Inlined by Vite at build time — see the note above.
+import bundledCatalog from '../../docs/model-catalog.json';
 
-const CATALOG_URL =
-  'https://raw.githubusercontent.com/chaitanyagiri/munder-difflin/main/docs/model-catalog.json';
+/** Disabled on purpose: no remote catalog in a private build. Greppable. */
+const CATALOG_URL: string | null = null;
 
 /** Models ship on a human timescale, and a stale list costs the user nothing —
  *  every command field in the app stays editable. Six hours matches the hero
- *  payload; a launch after that refreshes in the background. */
+ *  payload; a launch after that refreshes from the bundled copy. */
 const TTL_MS = 6 * 60 * 60 * 1000;
 
 export interface RemoteCatalogResult {
@@ -29,7 +29,7 @@ export interface RemoteCatalogResult {
   catalog: ModelCatalog | null;
   /** 0 when nothing has ever been fetched. */
   fetchedAt: number;
-  /** True when this is a cached or absent copy rather than a fresh fetch. */
+  /** True when this is a cached or absent copy rather than a fresh one. */
   stale: boolean;
 }
 
@@ -41,7 +41,7 @@ export async function loadModelCatalog(
   try {
     if (existsSync(cachePath)) {
       const read = JSON.parse(readFileSync(cachePath, 'utf8'));
-      // Re-validate on READ, not only on fetch. The cache is a file on disk that
+      // Re-validate on READ, not only on load. The cache is a file on disk that
       // a previous build wrote; a schema bump or a hand-edit must not reach the
       // pickers unchecked just because it once passed.
       const catalog = parseModelCatalog(read?.catalog);
@@ -55,18 +55,13 @@ export async function loadModelCatalog(
     return { catalog: cached.catalog, fetchedAt: cached.fetchedAt, stale: false };
   }
 
+  // No network path: the cached copy when it validates, else the catalog
+  // compiled into this build. Same degradation ladder minus the fetch.
   try {
-    const body = await getText(CATALOG_URL, { timeoutMs: 8000 });
-    // Parse the JSON and the SHAPE separately: valid JSON that is not a catalog
-    // must fall back, not reach a picker as undefined rows.
-    const catalog = parseModelCatalog(JSON.parse(body));
-    if (!catalog) throw new Error('not a model catalog');
-    const payload = { catalog, fetchedAt: Date.now() };
-    try {
-      mkdirSync(dirname(cachePath), { recursive: true });
-      writeFileSync(cachePath, JSON.stringify(payload));
-    } catch { /* the cache is an optimisation, not the feature */ }
-    return { ...payload, stale: false };
+    const catalog = parseModelCatalog(bundledCatalog);
+    if (catalog) return { catalog, fetchedAt: cached?.fetchedAt ?? 0, stale: cached == null };
+    if (cached) return { catalog: cached.catalog, fetchedAt: cached.fetchedAt, stale: true };
+    return { catalog: null, fetchedAt: 0, stale: true };
   } catch {
     if (cached) return { catalog: cached.catalog, fetchedAt: cached.fetchedAt, stale: true };
     return { catalog: null, fetchedAt: 0, stale: true };

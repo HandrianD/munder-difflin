@@ -2,8 +2,8 @@
  * WebhookServer — a generic, secret-gated inbound HTTP API that turns external
  * POSTs into hive work and lets each caller poll that work's status by a token.
  *
- * MANY endpoints, ONE server, ONE tunnel. Endpoints are told apart by the id in
- * the request path, so adding a webhook costs no extra port and no extra tunnel:
+ * MANY endpoints, ONE server. Endpoints are told apart by the id in
+ * the request path, so adding a webhook costs no extra port:
  *   - POST /<webhookId>  + `x-md-webhook-secret: <that endpoint's secret>`
  *       + JSON body matching THAT endpoint's user-editable schema
  *       → 200 `{ ok, token, taskId }`  when the endpoint's TriggerMode lets the
@@ -15,9 +15,13 @@
  *   - POST / (bare) is an alias for the endpoint with id `legacy`, so a caller
  *     holding the pre-multi-endpoint URL keeps working across the upgrade.
  *
- * SECURITY — this is a PUBLIC surface (tunnel-forwarded), unlike the loopback
- * /reply endpoint, so the gate is strict. Every property of the single-endpoint
- * version is preserved, plus the ones multi-tenancy adds:
+ * SECURITY — this is a PUBLIC surface in the upstream build (tunnel-forwarded).
+ * PRIVATE FORK: there is no tunnel any more, so the listener binds 127.0.0.1 only
+ * and the secret gate stays exactly as strict as before — reachability is
+ * decided by the operator (loopback, or `tailscale serve` in front of it), not
+ * by a third-party tunnel service. Every property of the single-endpoint version
+ * is preserved, plus the ones
+ * multi-tenancy adds:
  *   - constant-time secret comparison (`timingSafeEqual`, length-guarded), against
  *     THAT endpoint's secret only — revoking one endpoint cannot affect another,
  *   - an UNKNOWN endpoint id is answered exactly like a WRONG secret: the compare
@@ -37,16 +41,15 @@
  * it can be unit-/smoke-tested as a plain Node module. The actual card creation +
  * god routing + token→status lookup are injected as callbacks (they need hive
  * access, which lives in the main entrypoint); this class owns only transport,
- * the secret gate, schema validation, rate limiting, and the tunnel.
+ * the secret gate, schema validation, rate limiting, and the loopback bind.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { validateAgainstSchema, type InboundKind } from '../shared/triggers';
-// NOTE: `tunnelmole` is an ESM-only package. The Electron main process is bundled
-// as CommonJS, so a static `import` gets externalized into `require('tunnelmole')`
-// and throws ERR_REQUIRE_ESM at load. It is imported dynamically inside
-// `openTunnel()` instead — Rollup preserves dynamic import() in CJS output, which
-// can load ESM. Do not hoist this back to a top-level import.
+// PRIVATE FORK: `tunnelmole` (and `localtunnel` before it) exposed this port to
+// the public internet through a third-party tunnel service. Both dependencies are
+// removed from package.json and no tunnel call site remains — `start()` reports
+// the loopback URL instead.
 
 /** One servable endpoint — the structural subset of `WebhookTrigger` this class
  *  needs. A whole `WebhookTrigger` is assignable, so callers pass config rows
@@ -100,7 +103,7 @@ export interface WebhookTaskStatus {
 }
 
 export interface WebhookServerOptions {
-  /** Local TCP port the HTTP server binds to (and the tunnel forwards to). */
+  /** Local TCP port the HTTP server binds to. Loopback-only (see `listen`). */
   port: number;
   /** The endpoints to serve. May be swapped later with `setEndpoints`. */
   endpoints: WebhookEndpoint[];
@@ -121,8 +124,6 @@ export interface WebhookServerOptions {
 /** Reject bodies larger than this before buffering — callers send tiny JSON; the
  *  cap stops an unauthenticated peer forcing unbounded memory use pre-auth. */
 const MAX_BODY_BYTES = 1024 * 1024; // 1 MB
-/** Cap how long we wait for the public tunnel before giving up (server stays up). */
-const TUNNEL_START_TIMEOUT_MS = 10_000;
 /** Basic abuse guard: at most this many requests per fixed window, globally. */
 const RATE_LIMIT = 120;
 /** …and this many per endpoint, so one noisy caller burns its own budget first
@@ -142,8 +143,14 @@ const UNKNOWN_BUCKET = ':unknown';
 
 export class WebhookServer {
   private server: Server | null = null;
+  /** Loopback base URL (`http://127.0.0.1:<port>`), or null before `start()`.
+   *  There is no third-party tunnel any more — see `start()`. */
   private tunnelUrl: string | null = null;
   private readonly port: number;
+  /** The port actually bound, once `listen()` resolves. Differs from `port` when
+   *  the caller asked for 0 (OS-assigned) — and the URL we hand out must be the
+   *  bound one, not the requested one. */
+  private boundPort = 0;
   private endpoints = new Map<string, WebhookEndpoint>();
   private readonly onMessage: (msg: WebhookInbound, endpoint: WebhookEndpointRef) => WebhookDispatch | null;
   private readonly lookupStatus: (token: string) => WebhookTaskStatus | null;
@@ -152,7 +159,8 @@ export class WebhookServer {
    *  never exported, so it cannot be matched even by accident. */
   private readonly decoySecret = randomBytes(32).toString('hex');
   // Fixed-window rate limiters keyed by bucket ('' = global, else the endpoint id).
-  // The remote IP is the tunnel's, so per-IP would be meaningless behind tunnelmole.
+  // PRIVATE FORK: the listener is loopback-only, so a per-IP bucket would only ever
+  // hold one address — the global + per-endpoint caps above are the real guard.
   private windows = new Map<string, { start: number; count: number }>();
 
   constructor(opts: WebhookServerOptions) {
@@ -163,9 +171,9 @@ export class WebhookServer {
   }
 
   /**
-   * Swap the served endpoint list WITHOUT restarting the server or the tunnel —
+   * Swap the served endpoint list WITHOUT restarting the server —
    * the operator adds, edits and revokes webhooks from the UI, and a restart would
-   * mint a fresh (ephemeral) tunnel URL, silently breaking every caller of every
+   * change the port's URL, silently breaking every caller of every
    * OTHER endpoint. The map is rebuilt wholesale so a removed id stops resolving
    * on the very next request.
    */
@@ -189,12 +197,15 @@ export class WebhookServer {
     return [...this.endpoints.keys()];
   }
 
-  /** The public tunnel URL, or null when no tunnel is up. */
+  /** The base URL callers should use, or null before `start()`. PRIVATE FORK:
+   *  this is the loopback URL — there is no public tunnel any more. To expose it
+   *  beyond this machine, put `tailscale serve` (or your own reverse proxy) in
+   *  front of the port; the app itself never opens one. */
   publicUrl(): string | null {
     return this.tunnelUrl;
   }
 
-  /** Is the local HTTP server bound? `start()` reports ok:false for a tunnel
+  /** Is the local HTTP server bound? `start()` reports ok:false for a
    *  failure too, and in THAT case the security boundary is still live — the
    *  caller must keep the instance (or the listener leaks, unstoppable). */
   listening(): boolean {
@@ -202,10 +213,9 @@ export class WebhookServer {
   }
 
   /**
-   * Bind the local HTTP server, then open a public tunnel to it. The HTTP handler
-   * (the security boundary) is live the instant `listen` resolves; the tunnel is
-   * opened afterwards and is non-fatal — if it can't be established the server
-   * keeps running and we report the tunnel error without a URL.
+   * Bind the local HTTP server on 127.0.0.1. PRIVATE FORK: no tunnel. The HTTP
+   * handler (the security boundary) is live the instant `listen` resolves, and
+   * the returned URL is the loopback base — reachable from this machine only.
    */
   async start(): Promise<{ ok: boolean; url?: string; error?: string }> {
     if (this.server) return { ok: false, error: 'already running' };
@@ -216,20 +226,12 @@ export class WebhookServer {
       this.stop();
       return { ok: false, error: `failed to bind port ${this.port}: ${errMsg(e)}` };
     }
-    try {
-      const url = await this.openTunnel();
-      if (!url) throw new Error('tunnelmole returned empty URL');
-      this.tunnelUrl = url;
-      // tunnelmole runs in the background; there is no close handle to wire here.
-      return { ok: true, url };
-    } catch (e) {
-      // Surface the tunnel failure rather than silently returning ok:true with no url.
-      return { ok: false, error: `tunnel unavailable: ${errMsg(e)}` };
-    }
+    const url = `http://127.0.0.1:${this.boundPort || this.port}`;
+    this.tunnelUrl = url;
+    return { ok: true, url };
   }
 
-  /** Close the HTTP server. Idempotent and best-effort.
-   *  Note: tunnelmole has no documented close handle; teardown is best-effort. */
+  /** Close the HTTP server. Idempotent and best-effort. */
   stop(): void {
     this.tunnelUrl = null;
     try { this.server?.close(); } catch { /* noop */ }
@@ -241,23 +243,17 @@ export class WebhookServer {
       const server = createServer((req, res) => this.handleRequest(req, res));
       const onError = (e: Error): void => reject(e);
       server.once('error', onError);
-      server.listen(this.port, () => {
+      // '127.0.0.1' ONLY. Binding the default (0.0.0.0) would publish this
+      // secret-gated API to every interface on the LAN, tunnel or no tunnel —
+      // the one thing a private build must not do.
+      server.listen(this.port, '127.0.0.1', () => {
         server.off('error', onError);
         this.server = server;
+        // Remember the port the OS actually gave us (see `boundPort`).
+        const addr = server.address();
+        this.boundPort = addr && typeof addr === 'object' ? addr.port : this.port;
         resolve();
       });
-    });
-  }
-
-  private async openTunnel(): Promise<string> {
-    // TODO: optional persistent domain — pass `domain` here when config carries one.
-    // Dynamic import keeps the ESM-only `tunnelmole` out of the CJS require graph.
-    const { tunnelmole } = await import('tunnelmole');
-    return new Promise<string>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('timed out')), TUNNEL_START_TIMEOUT_MS);
-      tunnelmole({ port: this.port })
-        .then((url) => { clearTimeout(timer); resolve(url); })
-        .catch((e) => { clearTimeout(timer); reject(e); });
     });
   }
 
