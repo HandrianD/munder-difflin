@@ -710,6 +710,16 @@ const api = {
   relayClearSeatToken: (): Promise<RelayStatus> => ipcRenderer.invoke('relay:clearSeatToken'),
   /** Force a fresh handshake - the operator's way out of a rejected seat. */
   relayRestart: (): Promise<RelayStatus> => ipcRenderer.invoke('relay:restart'),
+  /** This machine's invite string (URL + seat token). Only ever produced on
+   *  demand and never logged; main refuses when there is nothing to invite
+   *  with. See src/shared/relayCode.ts. */
+  relayJoinCode: (): Promise<{ ok: true; code: string } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('relay:joinCode'),
+  /** Accept someone else's invite: stores the token, points at their relay and
+   *  switches the relay on in one step. */
+  relayApplyJoinCode: (code: string): Promise<
+    { ok: true; status: RelayStatus } | { ok: false; error: string }
+  > => ipcRenderer.invoke('relay:applyJoinCode', code),
 
   // ─── Filesystem (sandboxed to cwd) ───────────────────────────────────────
   listDir: (root: string, rel: string): Promise<

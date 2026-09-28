@@ -71,6 +71,7 @@ import { fetchHireManifest, readHireManifestFiles } from './hire';
 import { parseHireDeepLink, type HireManifest } from '../shared/hire';
 import { ClosingTimeController } from './closingTime';
 import { createRelayRuntime } from './relayRuntime';
+import { encodeJoinCode, decodeJoinCode, isValidRelayUrl } from '../shared/relayCode';
 import {
   getRelayNodeIdentity,
   getRelaySeatToken,
@@ -408,6 +409,33 @@ ipcMain.handle('relay:clearSeatToken', () => {
 ipcMain.handle('relay:restart', () => {
   relayRuntime.restart(readConfig());
   return relayRuntime.status();
+});
+
+// The invite half of Teams. A join code is this machine's URL plus its seat
+// token in one pasteable string — both halves read from the places the runtime
+// itself reads them, so a code can never advertise a token this machine does
+// not actually hold, and can never leak one from somewhere else.
+ipcMain.handle('relay:joinCode', () => {
+  const url = readConfig().relay?.url?.trim() ?? '';
+  const token = getRelaySeatToken();
+  if (!isValidRelayUrl(url) || !token) return { ok: false, error: 'notConfigured' };
+  return { ok: true, code: encodeJoinCode({ url, token }) };
+});
+
+// The join half: decode, store the credential, point at the relay, switch it
+// on. Storing the token first means the config write below — which fires the
+// config listener that reconciles the runtime — always sees a complete pair,
+// so a half-applied join never reaches the socket.
+ipcMain.handle('relay:applyJoinCode', (_evt, raw: unknown) => {
+  const decoded = decodeJoinCode(raw);
+  if (!decoded.ok) return { ok: false, error: decoded.error };
+
+  const stored = setRelaySeatToken(decoded.payload.token);
+  if (!stored.ok) return { ok: false, error: 'tokenNotStored' };
+
+  const next = writeConfig({ relay: { enabled: true, url: decoded.payload.url } });
+  relayRuntime.sync(next); // idempotent: the config listener has usually run
+  return { ok: true, status: relayRuntime.status() };
 });
 
 /** Agents spawned with `isolate: true` get a dedicated git worktree; this maps

@@ -126,8 +126,11 @@ export interface HarnessConfig {
   /** Active office map/cast theme (honored only when tvShowOffices is on). */
   officeTheme?: 'office' | 'friends' | 'brooklyn99' | 'siliconvalley' | 'got' | 'hogwarts';
   /** App chrome layout: the pixel office floor (default) or the workspace shell
-   *  (left nav + seven screens). A UI mode, not a tier — no gate, no seat. */
+   *  (left nav + screens). A UI mode, not a tier — no gate, no seat. */
   uiMode?: 'floor' | 'workspace';
+  /** Teams relay (Track B). The seat token is NOT here — it is write-only in
+   *  main and reaches this process only as a boolean. Mirrors src/main/config.ts. */
+  relay?: { enabled?: boolean; url?: string };
   /** Per-CLI-provider local/self-hosted base URL (Ollama/LM Studio/vLLM, …) for the
    *  OpenCode/Crush/pi/qwen engines; applied at spawn. API KEYS are NOT stored here —
    *  they live write-only in the secret broker. */

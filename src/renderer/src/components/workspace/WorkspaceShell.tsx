@@ -14,15 +14,17 @@ import { MemoryTab } from '@/components/CommandCenterPanel';
 import { MemoryGraphPanel } from '@/components/MemoryGraphPanel';
 import { SkillsTab } from '@/components/SkillsTab';
 import { WorkersTab } from '@/components/WorkersTab';
+import { TeamTab } from '@/components/workspace/TeamTab';
 import { useRestoreTeam } from '@/hooks/useRestoreTeam';
 import { useRtl } from '@/i18n/useDirection';
 import type { HarnessConfig } from '@/store/config';
 
-/** The seven screens of the workspace shell. Kept as a union rather than a
+/** The screens of the workspace shell. Kept as a union rather than a
  *  string so a typo in a `setScreen` call fails the build instead of silently
  *  blanking the content pane. */
 export type WorkspaceScreen =
-  | 'agents' | 'tasks' | 'inbox' | 'automations' | 'memory' | 'capabilities' | 'temps';
+  | 'agents' | 'tasks' | 'inbox' | 'automations' | 'memory' | 'capabilities' | 'temps'
+  | 'team';
 
 const LS_SCREEN = 'cth.workspaceScreen';
 
@@ -33,7 +35,8 @@ const NAV: { key: WorkspaceScreen; labelKey: string; icon: IconName }[] = [
   { key: 'automations',  labelKey: 'workspace.nav.automations',  icon: 'clock' },
   { key: 'memory',       labelKey: 'workspace.nav.memory',       icon: 'sparkle' },
   { key: 'capabilities', labelKey: 'workspace.nav.capabilities', icon: 'code' },
-  { key: 'temps',        labelKey: 'workspace.nav.temps',        icon: 'gear' }
+  { key: 'temps',        labelKey: 'workspace.nav.temps',        icon: 'gear' },
+  { key: 'team',         labelKey: 'workspace.nav.team',         icon: 'web' }
 ];
 
 function isScreen(v: string | null): v is WorkspaceScreen {
@@ -97,7 +100,7 @@ function EmptyPane({ titleKey, subKey }: { titleKey: string; subKey?: string }) 
 }
 
 /**
- * Pro-style workspace shell: a left nav rail with the seven screens and a
+ * Pro-style workspace shell: a left nav rail with the screens and a
  * right content pane that reuses the existing panels as-is. It is a UI mode,
  * not a tier — no gate, no seat check — and it replaces the office floor
  * entirely while active (App.tsx switches on `config.uiMode`).
@@ -386,6 +389,12 @@ export function WorkspaceShell({ config }: { config: HarnessConfig }) {
         {screen === 'temps' && (
           <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
             <WorkersTab />
+          </div>
+        )}
+
+        {screen === 'team' && (
+          <div className="cth-scroll-hidden" style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+            <TeamTab config={config} />
           </div>
         )}
 
