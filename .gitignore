@@ -35,3 +35,9 @@ docs/blog-preview-*/
 # Finder duplicate files, e.g. "spec 2.js", "sitemap 2.xml"
 *\ 2.*
 *\ [0-9].*
+
+# relay seat hashes + queued envelopes: credential material and message history, never commit
+relay/*.db
+relay/*.db-journal
+relay/*.db-wal
+relay/*.db-shm

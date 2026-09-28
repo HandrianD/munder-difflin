@@ -147,6 +147,32 @@ Machine A (harness)  <--ws-->  relay (localhost + tailscale serve)  <--ws-->  Ma
   `result`, `board.update`). No shell payloads, no `fs` primitives, no skill code —
   the relay is a mailbox, not an RPC bus.
 
+### Status — Track B, step 1 (relay + CLI) done
+
+`relay/` is built and tested: `db.js`, `auth.js`, `envelope.js`, `server.js`,
+`cli.js`, `README.md`, with `test/relay.test.cjs` (23 tests) covering handshake,
+forgery, offline buffering, broadcast fan-out, dedupe, revocation and the CLI as
+a subprocess. `ws` and `@types/ws` were added to `package.json`.
+
+Three decisions worth recording:
+
+- **Storage is `node:sqlite`, not better-sqlite3.** The app's copy is compiled
+  for the Electron ABI (`NODE_MODULE_VERSION 128`) and will not load in the
+  plain Node process the relay runs as. `node:sqlite` is built into Node 24, so
+  the relay still adds exactly one dependency (`ws`). Requires Node 24+; Node 22
+  needs `--experimental-sqlite`.
+- **No `node register` subcommand.** A machine registers itself on handshake,
+  authenticated by its seat — an unauthenticated pre-registration command would
+  be a second, weaker path into `nodes`. The CLI has `node list`.
+- **Routing fans out to every live machine except the sender**, for targeted and
+  broadcast envelopes alike. The relay does not carry the roster, so it cannot
+  be used to enumerate who is in the hive; the receiver's `deliver()` no-ops
+  where the inbox does not exist. Delivery is at-least-once and the receiver is
+  idempotent (HiveMessage id = inbox filename).
+
+Still to do for Track B: `src/main/relayClient.ts`, the `deliver()` seam at
+`hive.ts:1541`, the Teams UI, and the two-machine end-to-end pass.
+
 ### Teams UI (reuses Track A shell)
 
 1. **Invite**: settings screen shows a join code (relay + seat token encoded); other
