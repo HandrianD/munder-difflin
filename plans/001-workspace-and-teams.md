@@ -150,7 +150,7 @@ Machine A (harness)  <--ws-->  relay (localhost + tailscale serve)  <--ws-->  Ma
 ### Status — Track B, step 1 (relay + CLI) done
 
 `relay/` is built and tested: `db.js`, `auth.js`, `envelope.js`, `server.js`,
-`cli.js`, `README.md`, with `test/relay.test.cjs` (23 tests) covering handshake,
+`cli.js`, `README.md`, with `test/relay.test.cjs` (24 tests) covering handshake,
 forgery, offline buffering, broadcast fan-out, dedupe, revocation and the CLI as
 a subprocess. `ws` and `@types/ws` were added to `package.json`.
 
@@ -170,8 +170,43 @@ Three decisions worth recording:
   where the inbox does not exist. Delivery is at-least-once and the receiver is
   idempotent (HiveMessage id = inbox filename).
 
-Still to do for Track B: `src/main/relayClient.ts`, the `deliver()` seam at
-`hive.ts:1541`, the Teams UI, and the two-machine end-to-end pass.
+### Status — Track B, steps 2–4 (client, seam, wiring) done
+
+Built and tested on top of the relay:
+
+- **`src/main/relayIdentity.ts`** — seat token in `safeStorage` behind its own
+  file (`relay-seat-token.json`, atomic tmp+rename, fail-closed when the OS keychain
+  is unavailable), plus a stable mailbox address (`node-<16 hex>`) at
+  `relay-node.json`. Mirrors the audited pattern in `integrations.ts:82-156`.
+- **`src/main/relayClient.ts`** — one connection with a durable, ack-gated
+  outbox (`relay-outbox.json`, cap 5000), reconnect on
+  `[1s,2s,5s,10s,20s,30s]` ± 25% jitter, 25s heartbeat with a 2× silence
+  kill, and a 10s hello timeout. Fatal close codes (4002–4005) park the client
+  in `rejected` with no retry. Exports `RELAY_ENVELOPE_KINDS` and
+  `envelopeKindForAct()`.
+- **The seam in `src/main/hive.ts`** — after `routeMessage`, any target with
+  no local inbox is handed to the relay mirror, plus one envelope per
+  broadcast (`toAgent: null`). Inbound mail enters through `receiveRemote()`,
+  which marks the id foreign-origin so it is never echoed back to its own
+  sender. Declining the mirror falls through to the original drop+bounce.
+- **`src/main/relayRuntime.ts`** — the reconcile loop. `sync(cfg)` is
+  idempotent: an unrelated settings save does not tear down a healthy socket;
+  only a URL/token change does. Boot, config-write and quit call it; status is
+  pushed to the renderer as `relay:status`.
+
+Two design decisions worth recording:
+
+- **Cross-machine send is "mirror remote targets", not the plan's literal
+  `deliver()` mirror.** Local routing is untouched; only undeliverable-local
+  targets cross the relay. No roster replication, so the relay still cannot
+  enumerate the hive.
+- **Error frames carry the envelope id.** A refusal names exactly the envelope
+  it rejects, so a poison message can be dropped without stalling the outbox;
+  unattributable refusals report `null` rather than a guess.
+
+Remaining for Track B: the Teams UI (invite join code, `Agent.remote?`/`node?`
+badges, DM store slice feeding the Track A Inbox, file attachments), then the
+two-machine end-to-end pass with a seat-revoke check.
 
 ### Teams UI (reuses Track A shell)
 
