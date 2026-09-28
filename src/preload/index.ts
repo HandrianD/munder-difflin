@@ -328,12 +328,34 @@ export interface HarnessConfig {
   /** App chrome layout: the pixel office floor (default) or the workspace shell.
    *  A UI mode, not a tier. Mirrors src/main/config.ts. */
   uiMode?: 'floor' | 'workspace';
+  /** Teams relay (Track B). The seat token is NOT here - it is encrypted by
+   *  main and only ever reaches this process as a boolean. Mirrors
+   *  src/main/config.ts. */
+  relay?: { enabled?: boolean; url?: string };
   /** Per-CLI-provider local/self-hosted base URL (Ollama/LM Studio/vLLM, …) for the
    *  OpenCode/Crush/pi/qwen engines; applied at spawn. API KEYS are NOT stored here —
    *  they live write-only in the secret broker. */
   providerBaseUrls?: Partial<Record<AgentProvider, string>>;
   /** Per-CLI-provider default model slug, used to pre-fill the model picker. */
   providerDefaultModels?: Partial<Record<AgentProvider, string>>;
+}
+
+/** Live relay connection state, pushed from main whenever it changes.
+ *  See src/main/relayRuntime.ts for the state machine behind it. */
+export interface RelayStatus {
+  /** From config: has the operator switched the relay on. */
+  enabled: boolean;
+  /** Whether a seat token is stored. Never the token. */
+  hasSeatToken: boolean;
+  state: 'idle' | 'connecting' | 'authenticating' | 'online' | 'backoff' | 'rejected';
+  url: string;
+  nodeId: string;
+  seatLabel: string | null;
+  /** Envelopes waiting for an ack. */
+  outboxDepth: number;
+  inflight: number;
+  attempt: number;
+  lastError: string | null;
 }
 
 export interface MemoryStatus {
@@ -674,6 +696,21 @@ const api = {
   changeHome: (newHome: string, mode: 'move' | 'fresh'): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('config:changeHome', { newHome, mode }),
 
+  // ─── Relay (Teams, Track B) ────────────────────────────────────────────────
+  /** Live connection status. Also pushed over the relay:status channel - see
+   *  onRelayStatus below. */
+  relayStatus: (): Promise<RelayStatus> => ipcRenderer.invoke('relay:status'),
+  /** Whether a seat token exists. WRITE-ONLY credential: main never hands the
+   *  token back over this bridge, only the fact that one is stored. */
+  relayHasSeatToken: (): Promise<boolean> => ipcRenderer.invoke('relay:hasSeatToken'),
+  /** This machine's mailbox address (not a secret) for the join code. */
+  relayNodeIdentity: (): Promise<{ nodeId: string; nodeName: string }> => ipcRenderer.invoke('relay:nodeIdentity'),
+  relaySetSeatToken: (token: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('relay:setSeatToken', token),
+  relayClearSeatToken: (): Promise<RelayStatus> => ipcRenderer.invoke('relay:clearSeatToken'),
+  /** Force a fresh handshake - the operator's way out of a rejected seat. */
+  relayRestart: (): Promise<RelayStatus> => ipcRenderer.invoke('relay:restart'),
+
   // ─── Filesystem (sandboxed to cwd) ───────────────────────────────────────
   listDir: (root: string, rel: string): Promise<
     { ok: true; entries: DirEntry[]; path: string } | { ok: false; error: string }
@@ -958,6 +995,11 @@ const api = {
     const listener = (_e: IpcRendererEvent, config: HarnessConfig) => cb(config);
     ipcRenderer.on('config:changed', listener);
     return () => ipcRenderer.removeListener('config:changed', listener);
+  },
+  onRelayStatus: (cb: (status: RelayStatus) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, status: RelayStatus) => cb(status);
+    ipcRenderer.on('relay:status', listener);
+    return () => ipcRenderer.removeListener('relay:status', listener);
   },
 
   // ─── Quit confirmation ───────────────────────────────────────────────────

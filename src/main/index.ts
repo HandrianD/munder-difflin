@@ -70,6 +70,14 @@ import { resolveGodName } from '../shared/godIdentity';
 import { fetchHireManifest, readHireManifestFiles } from './hire';
 import { parseHireDeepLink, type HireManifest } from '../shared/hire';
 import { ClosingTimeController } from './closingTime';
+import { createRelayRuntime } from './relayRuntime';
+import {
+  getRelayNodeIdentity,
+  getRelaySeatToken,
+  hasRelaySeatToken,
+  setRelaySeatToken,
+  clearRelaySeatToken
+} from './relayIdentity';
 import {
   argsWithAutoModeFlag,
   inferAgentProvider,
@@ -357,6 +365,50 @@ let floorSeq = 0;
 
 /** When true, skip the quit interceptor (user already confirmed). */
 let allowQuit = false;
+
+// ─── Relay (Teams, Track B) ─────────────────────────────────────────────────
+// The machine's seat to the private relay on the tailnet. Built at module scope
+// so teardown and config-write hooks can reach it; it connects on the FIRST
+// sync() after the app is ready, never earlier (userData is not resolvable
+// before then). Everything Electron-shaped is injected — see relayRuntime.ts.
+const relayRuntime = createRelayRuntime(hive, {
+  outboxPath: () => join(app.getPath('userData'), 'relay-outbox.json'),
+  getToken: () => getRelaySeatToken(),
+  nodeId: () => getRelayNodeIdentity().nodeId,
+  nodeName: () => getRelayNodeIdentity().nodeName,
+  broadcast: (status) => {
+    for (const w of allWindows) {
+      if (w.isDestroyed() || w.webContents.isDestroyed()) continue;
+      w.webContents.send('relay:status', status);
+    }
+  },
+  log: (line) => console.log(line)
+});
+
+// The seat token is WRITE-ONLY across this bridge: the renderer can set it and
+// can ask whether one exists, but never read it back. Anything a renderer can
+// read, a renderer that has been compromised can exfiltrate — and unlike a page
+// in a browser this one can also reach the filesystem.
+ipcMain.handle('relay:status', () => relayRuntime.status());
+ipcMain.handle('relay:hasSeatToken', () => hasRelaySeatToken());
+ipcMain.handle('relay:nodeIdentity', () => getRelayNodeIdentity());
+ipcMain.handle('relay:setSeatToken', (_evt, token: unknown) => {
+  if (typeof token !== 'string') return { ok: false, error: 'seat token required' };
+  const result = setRelaySeatToken(token);
+  // A token arriving is often the missing piece of an already-enabled relay,
+  // so re-reconcile instead of waiting for the next unrelated settings save.
+  if (result.ok) relayRuntime.sync(readConfig());
+  return result;
+});
+ipcMain.handle('relay:clearSeatToken', () => {
+  clearRelaySeatToken();
+  relayRuntime.sync(readConfig());
+  return relayRuntime.status();
+});
+ipcMain.handle('relay:restart', () => {
+  relayRuntime.restart(readConfig());
+  return relayRuntime.status();
+});
 
 /** Agents spawned with `isolate: true` get a dedicated git worktree; this maps
  *  the agent/pty id → the worktree path so we can tear it down on kill. */
@@ -3781,6 +3833,10 @@ function teardownAndQuit(): void {
   try { reflector.stop(); } catch (e) { console.error('[quit] reflector.stop:', e); }
   try { persist.close(); } catch (e) { console.error('[quit] persist.close:', e); }
   try { hive.stopAllProxyBridges(); } catch (e) { console.error('[quit] stopAllProxyBridges:', e); }
+  // Before killAll: a clean close hands the outbox its final acks; a killed
+  // process just leaves them queued for the next launch (either is correct,
+  // but only one is polite).
+  try { relayRuntime.stop(); } catch (e) { console.error('[quit] relay.stop:', e); }
   try { ptyManager.killAll(); } catch (e) { console.error('[quit] killAll:', e); }
   app.quit();
 }
@@ -5328,6 +5384,9 @@ app.whenReady().then(() => {
   initAutoUpdater(() => liveWebContents());
   // Bootstrap the hive (if harnessHome is configured) and start the message router.
   bootstrapHiveServices();
+  // Reconcile the relay with config once paths are resolvable. No-op unless
+  // relay.enabled, a URL and a stored seat token are all present.
+  relayRuntime.sync(readConfig());
   // Survive sleep/lock. macOS freezes libuv timers during true system sleep, so a
   // locked/idle/slept Mac stops firing schedules and can wedge PTYs. On wake we
   // re-arm the scheduler (catching up missed missions ONCE) + beats + keep-awake,
@@ -5385,6 +5444,9 @@ onConfigWritten((config) => {
     if (w.isDestroyed() || w.webContents.isDestroyed()) continue;
     w.webContents.send('config:changed', config);
   }
+  // reconcile is idempotent and cheap when nothing about the relay changed —
+  // see relayRuntime.sync. Enabling, disabling and URL edits take effect here.
+  relayRuntime.sync(config);
 });
 
 app.on('window-all-closed', () => {
