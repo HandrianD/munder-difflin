@@ -1496,5 +1496,19 @@
       "notConfigured": "本机还没有中继地址或席位令牌。",
       "tokenNotStored": "席位令牌未能保存。"
     }
+  },
+  "remoteDms": {
+    "title": "其他机器",
+    "empty": "还没有与其他机器的会话。",
+    "emptySub": "在「团队」页加入队伍，对方发来的邮件会出现在这里。",
+    "unread": "{{count}} 条未读",
+    "hide": "收起",
+    "show": "展开",
+    "directionIn": "收到",
+    "directionOut": "发出",
+    "replyPlaceholder": "回复 {{peer}}…",
+    "send": "发送",
+    "sending": "正在发送…",
+    "sendFailed": "这条回复未能发出。"
   }
 }

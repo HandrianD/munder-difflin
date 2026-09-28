@@ -15,6 +15,8 @@ import { MemoryGraphPanel } from '@/components/MemoryGraphPanel';
 import { SkillsTab } from '@/components/SkillsTab';
 import { WorkersTab } from '@/components/WorkersTab';
 import { TeamTab } from '@/components/workspace/TeamTab';
+import { RemoteDmsPanel } from '@/components/workspace/RemoteDmsPanel';
+import { totalUnread } from '@/components/workspace/remoteDmSeen';
 import { useRestoreTeam } from '@/hooks/useRestoreTeam';
 import { useRtl } from '@/i18n/useDirection';
 import type { HarnessConfig } from '@/store/config';
@@ -150,8 +152,10 @@ export function WorkspaceShell({ config }: { config: HarnessConfig }) {
   }, [showHistory, autoTab]);
 
   // The nav badge is the one piece of state the shell owns outright: AskMeTab
-  // only mounts when its screen is open, but the badge has to be right before
-  // you click. Same 5s cadence as every other task reader.
+  // and RemoteDmsPanel only mount when their screen is open, but the badge has
+  // to be right before you click. Same 5s cadence as every other task reader.
+  // It counts BOTH halves of the Inbox screen: questions owed to this operator
+  // and unread mail from another machine.
   const [pending, setPending] = useState(0);
   useEffect(() => {
     let alive = true;
@@ -159,7 +163,13 @@ export function WorkspaceShell({ config }: { config: HarnessConfig }) {
       try {
         const raw = await window.cth.hiveTasks();
         if (!alive) return;
-        setPending(parseTasks(raw).filter(waitsOnHuman).length);
+        let count = parseTasks(raw).filter(waitsOnHuman).length;
+        try {
+          const threads = await window.cth.hiveRemoteDms();
+          if (alive) count += totalUnread(threads);
+        } catch { /* relay off or main still booting — the local half still counts */ }
+        if (!alive) return;
+        setPending(count);
       } catch { /* main not ready — keep the last count */ }
     };
     void tick();
@@ -347,7 +357,14 @@ export function WorkspaceShell({ config }: { config: HarnessConfig }) {
 
         {screen === 'tasks' && <TasksKanban />}
 
-        {screen === 'inbox' && <AskMeTab />}
+        {screen === 'inbox' && (
+          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+            <RemoteDmsPanel />
+            <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+              <AskMeTab />
+            </div>
+          </div>
+        )}
 
         {screen === 'automations' && (
           <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>

@@ -1496,5 +1496,19 @@
       "notConfigured": "This machine has no relay URL or seat token yet.",
       "tokenNotStored": "The seat token could not be stored."
     }
+  },
+  "remoteDms": {
+    "title": "Other machines",
+    "empty": "No conversations with another machine yet.",
+    "emptySub": "Join a team from the Team screen, and mail from the other side shows up here.",
+    "unread": "{{count}} unread",
+    "hide": "Hide",
+    "show": "Show",
+    "directionIn": "Received",
+    "directionOut": "Sent",
+    "replyPlaceholder": "Reply to {{peer}}…",
+    "send": "Send",
+    "sending": "Sending…",
+    "sendFailed": "Could not send that reply."
   }
 }

@@ -72,6 +72,7 @@ import { parseHireDeepLink, type HireManifest } from '../shared/hire';
 import { ClosingTimeController } from './closingTime';
 import { createRelayRuntime } from './relayRuntime';
 import { encodeJoinCode, decodeJoinCode, isValidRelayUrl } from '../shared/relayCode';
+import { listRemoteDms } from './remoteThreads';
 import {
   getRelayNodeIdentity,
   getRelaySeatToken,
@@ -3564,6 +3565,10 @@ ipcMain.handle('hive:tasks', () => hive.tasks());
 ipcMain.handle('hive:log', (_evt, n: unknown) => hive.logTail(typeof n === 'number' ? n : 200));
 ipcMain.handle('hive:memory', (_evt, id: unknown) => (typeof id === 'string' ? hive.memory(id) : ''));
 ipcMain.handle('hive:inbox', (_evt, id: unknown) => (typeof id === 'string' ? hive.inbox(id) : []));
+// The durable cross-machine conversation list. Separate from hive:inbox on
+// purpose: an inbox is work that is still owed and drains to .done, a thread
+// with another machine is a record and must outlast both sides handling it.
+ipcMain.handle('hive:remoteDms', () => listRemoteDms(hive.root() ?? ''));
 // Voice read-layer: recent message CONTENT (inbox/outbox bodies), REDACTED
 // main-side by hive.voiceMessages(). The renderer/voice layer never sees a raw
 // body — secrets are stripped here, before the result crosses IPC.

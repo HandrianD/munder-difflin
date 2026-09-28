@@ -204,9 +204,63 @@ Two design decisions worth recording:
   it rejects, so a poison message can be dropped without stalling the outbox;
   unattributable refusals report `null` rather than a guess.
 
-Remaining for Track B: the Teams UI (invite join code, `Agent.remote?`/`node?`
-badges, DM store slice feeding the Track A Inbox, file attachments), then the
-two-machine end-to-end pass with a seat-revoke check.
+### Status — Track B, step 5a (join code + Team screen) done
+
+- **`src/shared/relayCode.ts`** — the join code: `mdr1.` + base64url JSON
+  carrying only `{url, token}`. Pure (no Buffer, no DOM) so main, renderer and
+  `node --test` all run the same code. Version-marked so a code from a later
+  format fails as `unknownPrefix` instead of half-parsing; whitespace is
+  stripped because people paste codes out of wrapped terminals; every field is
+  validated on the way out (`ws(s)://` only, `mdr_ + 64 hex`).
+  Documented plainly as a bearer credential — encoding is not secrecy.
+- **Two IPC handlers** in `src/main/index.ts`: `relay:joinCode` mints a code
+  only from this machine's own URL and stored token, and `relay:applyJoinCode`
+  stores the token *first* so the config write that follows — which fires the
+  listener that reconciles the runtime — always sees a complete pair. Both
+  reachable through the preload as `relayJoinCode` / `relayApplyJoinCode`.
+- **An eighth screen, `team`**, in the workspace shell: live status chip with a
+  retry affordance on a refused seat, this machine's node identity, URL + seat
+  token fields (token write-only, masked, never seeded from config), and the
+  invite/join panels. New `team.*` and `workspace.nav.team` strings in
+  en/ar/zh.
+- **`test/relay-code.test.cjs`** (8) round-trips, wraps, and fails each field
+  independently, with Buffer as an independent base64url oracle.
+  **`test/workspace-team.test.cjs`** (6) keeps the nav union, the nav entries
+  and the locale key trees in step, asserts every IPC error has a translated
+  line, and pins the write-only property of the seat token.
+
+### Status — Track B, step 5b (DM archive + Inbox) done
+
+- **`src/main/remoteThreads.ts`** — a durable archive at
+  `<hive>/dm/<node>/<peer>/<messageId>.json`, plus `src/shared/remoteDm.ts`
+  for the shapes. Separate from the inbox on purpose: an agent drains
+  `inbox/` into `.done/`, so the inbox is a queue of what is still owed,
+  while a conversation with another machine has to still be readable after
+  BOTH sides have handled everything in it.
+- **Two hooks in `hive.ts`**: `receiveRemote` archives before routing (so mail
+  addressed to an id this machine lacks is not lost with it), and the
+  no-local-inbox mirror site archives what actually left. Local mail is never
+  archived — it never crossed anything.
+- **The key is `node:peer`.** Inbound mail knows its node from the envelope;
+  outbound does not, because the relay fans out to every machine, so the node
+  is recovered from where that peer's mail has come from and falls back to
+  `unknown` rather than being guessed onto a machine that may host a
+  different copy of the same agent id.
+- **`hive:remoteDms`** over the bridge; `RemoteDmsPanel` sits at the top of the
+  Track A Inbox screen with a per-thread unread badge, and the shell's nav
+  badge counts questions owed here plus unread remote mail.
+- **Replying uses the ordinary `hiveSend` path** — there is no "remote send";
+  mail with no local recipient is what the seam already picks up. What matters
+  is the SENDING id: it must be a real local agent id, because the other
+  machine resolves `human`/`god` to ITS orchestrator and a reply would end
+  there instead of coming back over the wire.
+
+`test/remote-dms.test.cjs` (15) covers the archive and both hooks;
+`test/remote-dms-ui.test.cjs` (8) covers the badge bookkeeping, the bridge and
+the locale keys.
+
+Still to do for Track B: `Agent.remote?`/`node?` badges, file attachments,
+then the two-machine end-to-end pass with a seat-revoke check.
 
 ### Teams UI (reuses Track A shell)
 

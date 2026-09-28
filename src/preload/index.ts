@@ -14,6 +14,8 @@ import type { ModelCatalog } from '../shared/modelCatalogPayload';
 export type { ModelCatalog, CatalogModel } from '../shared/modelCatalogPayload';
 import type { HookEvent } from '../shared/hookEvents';
 export type { HookEvent } from '../shared/hookEvents';
+import type { RemoteDm, RemoteThread } from '../shared/remoteDm';
+export type { RemoteDm, RemoteThread } from '../shared/remoteDm';
 import type { LocalSkill, CatalogSkill } from '../main/skills';
 export type { LocalSkill, CatalogSkill } from '../main/skills';
 import type {
@@ -814,6 +816,10 @@ const api = {
   hiveLog: (n?: number): Promise<unknown[]> => ipcRenderer.invoke('hive:log', n ?? 200),
   hiveMemory: (id: string): Promise<string> => ipcRenderer.invoke('hive:memory', id),
   hiveInbox: (id: string): Promise<HiveMessage[]> => ipcRenderer.invoke('hive:inbox', id),
+  /** Durable cross-machine conversations, newest activity first. Separate from
+   *  hiveInbox: an inbox drains to .done as it is handled, a thread with
+   *  another machine is a record and has to outlast that. */
+  hiveRemoteDms: (): Promise<RemoteThread[]> => ipcRenderer.invoke('hive:remoteDms'),
   /** Voice read-layer: recent message CONTENT (inbox/outbox bodies), REDACTED in
    *  main. Pass { id } for one message, { agentId } to scope to one mailbox, or
    *  {} for the whole floor. Backs Realtime Michael's get_messages. The renderer

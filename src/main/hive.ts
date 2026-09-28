@@ -43,6 +43,8 @@ import { preferredAgentRole } from '../shared/agentRole';
 import { mergeTaskLedger } from '../shared/taskLedger';
 import { expandTilde } from './fs';
 import { resolveGodName } from '../shared/godIdentity';
+import { appendRemoteDm, findNodeForPeer } from './remoteThreads';
+import { isSafeSegment } from '../shared/remoteDm';
 
 /** The subset of HarnessConfig the hive consumes for the default-MCP merge.
  *  Kept as a local shape so hive.ts never imports the foundation-owned config
@@ -1635,7 +1637,11 @@ export class HiveManager {
       // when the mirror declines it. The two must not both happen: reporting a
       // machine as undeliverable while its mail is queued on the wire would be
       // the same lie in the other direction.
-      if (this.mirrorRemote(msg, t)) { delivered.push(t); continue; }
+      if (this.mirrorRemote(msg, t)) {
+        this.archiveRemoteDm(msg, t, 'out');
+        delivered.push(t);
+        continue;
+      }
       this.appendLog({ kind: 'drop', reason: 'no-inbox', from: msg.from, to: t, id: msg.id });
       if (t !== godId) {
         this.deliver({
@@ -1719,9 +1725,52 @@ export class HiveManager {
   receiveRemote(partial: Partial<HiveMessage>, from = 'system'): HiveMessage {
     const msg = this.normalize(partial, from);
     this.markForeignOrigin(msg.id);
+    // Archive before routing: a message addressed to an id this machine does
+    // not have is dropped from the local floor, but the conversation it belongs
+    // to is still real and must not be lost with it.
+    const peer = typeof partial.from === 'string' && partial.from ? partial.from : msg.from;
+    this.archiveRemoteDm(msg, peer, 'in', from);
     this.routeMessage(msg);
     this.commit(`hive: remote msg ${msg.from}→${msg.to} (${msg.act})`);
     return msg;
+  }
+
+  /**
+   * Record one message that crossed the relay in the durable DM archive.
+   *
+   * For inbound mail the node is given (the envelope's sender). For outbound it
+   * has to be recovered from where this peer's mail has come from, because the
+   * relay fans out to every machine — there is no single destination to write.
+   * Best-effort by design: the archive is a read model, and a failure here must
+   * never be able to stop a message that is already routable.
+   */
+  private archiveRemoteDm(
+    msg: HiveMessage,
+    peer: string,
+    direction: 'in' | 'out',
+    node?: string
+  ): void {
+    const root = this.root();
+    if (!root || !isSafeSegment(peer)) return;
+    const where = direction === 'in'
+      ? (node && isSafeSegment(node) ? node : 'unknown')
+      : (findNodeForPeer(root, peer) ?? 'unknown');
+    try {
+      appendRemoteDm(root, {
+        id: msg.id,
+        conversation: msg.conversation,
+        in_reply_to: msg.in_reply_to,
+        from: msg.from,
+        to: msg.to,
+        act: msg.act,
+        subject: msg.subject,
+        body: msg.body,
+        created_at: msg.created_at,
+        node: where,
+        peer,
+        direction
+      });
+    } catch { /* never break routing for the read model */ }
   }
 
   /** Observer invoked for EVERY routed message with its resolved targets.
