@@ -331,12 +331,27 @@ test('a forged envelope is reported and never reaches the queue', () => withRela
   assert.equal(rowFor(db, 'SELECT 1 AS n FROM messages WHERE id = ?', 'forged-1'), undefined);
 }));
 
-test('an unknown envelope kind is refused', () => withRelay(async ({ db, port }) => {
+test('an unknown envelope kind is refused, and the refusal names the envelope', () => withRelay(async ({ db, port }) => {
   const seat = seedSeat(db, 'kinds');
   const a = await connect(port, helloFor(seat, 'node-kind-a'));
   await waitFor(a, (m) => m.type === 'welcome');
-  sendEnvelope(a, envelope({ fromNode: 'node-kind-a', kind: 'admin' }));
-  assert.equal((await waitFor(a, (m) => m.type === 'error')).code, 'unknown-kind');
+  const bad = envelope({ fromNode: 'node-kind-a', kind: 'admin' });
+  sendEnvelope(a, bad);
+  const err = await waitFor(a, (m) => m.type === 'error');
+  assert.equal(err.code, 'unknown-kind');
+  // Without the id a client cannot tell WHICH queued message was refused, so
+  // one poison envelope sits at the head of its outbox forever.
+  assert.equal(err.id, bad.id);
+}));
+
+test('a refusal on an unusable envelope id reports null rather than a guess', () => withRelay(async ({ db, port }) => {
+  const seat = seedSeat(db, 'badid');
+  const a = await connect(port, helloFor(seat, 'node-badid'));
+  await waitFor(a, (m) => m.type === 'welcome');
+  sendEnvelope(a, envelope({ fromNode: 'node-badid', id: 42 }));
+  const err = await waitFor(a, (m) => m.type === 'error');
+  assert.equal(err.code, 'bad-envelope');
+  assert.equal(err.id, null, 'a non-string id must not be echoed back as attribution');
 }));
 
 test('a live socket answers protocol pings', () => withRelay(async ({ db, port }) => {

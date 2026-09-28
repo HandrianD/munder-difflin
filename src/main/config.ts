@@ -321,6 +321,15 @@ export interface HarnessConfig {
   /** App chrome layout: the pixel office floor (default) or the workspace shell
    *  (left nav + seven screens). A UI mode, not a tier — no seat, no gate. */
   uiMode?: 'floor' | 'workspace';
+  /** Teams relay (Track B): keep this machine's seat connected to the private
+   *  relay in `relay/`, reachable only over the tailnet. `enabled` alone does
+   *  nothing until a URL and a seat token are present.
+   *
+   *  The seat token is deliberately NOT a field here: config.json is plain
+   *  JSON and often committed/shared as a starting point. The token is held by
+   *  Electron safeStorage instead (src/main/relayToken.ts), exactly like the
+   *  integration secrets. */
+  relay?: { enabled?: boolean; url?: string };
   /** Per-CLI-provider local/self-hosted base URL (Ollama/LM Studio/vLLM, …) for the
    *  OpenCode/Crush/pi/qwen engines; applied at spawn (config-injection or proxy
    *  upstream). API KEYS are NOT stored here — they live write-only in the secret
@@ -455,6 +464,8 @@ const DEFAULTS: HarnessConfig = {
   officeTheme: 'office',
   // Pixel office floor is the default shell; the workspace shell is opt-in.
   uiMode: 'floor',
+  // Teams relay is opt-in: no URL, no seat token, no socket.
+  relay: { enabled: false, url: '' },
   slackEnabled: false,
   slackSigningSecret: undefined,
   slackBotToken: undefined,
@@ -509,7 +520,8 @@ function configPath(): string {
  * defaults for the whole process — and for every config read afterwards.
  *
  * Every branch below therefore constructs a fresh object, including the
- * "nothing persisted" branch.
+ * "nothing persisted" branch. `relay` is copied for the same second reason as
+ * the triggers (a UI toggle must not mutate DEFAULTS.relay in place).
  */
 function withTriggerDefaults(cfg: HarnessConfig): HarnessConfig {
   return {
@@ -519,6 +531,10 @@ function withTriggerDefaults(cfg: HarnessConfig): HarnessConfig {
       clear: { ...DEFAULT_CONTEXT_TRIGGER.clear, ...cfg.contextTrigger?.clear }
     },
     orgTrigger: { ...DEFAULT_ORG_TRIGGER, ...cfg.orgTrigger },
+    relay: {
+      enabled: cfg.relay?.enabled ?? DEFAULTS.relay?.enabled ?? false,
+      url: cfg.relay?.url ?? DEFAULTS.relay?.url ?? ''
+    },
     webhookTriggers: Array.isArray(cfg.webhookTriggers)
       ? cfg.webhookTriggers.map((t) => ({ ...t }))
       : []

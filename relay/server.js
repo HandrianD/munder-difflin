@@ -306,7 +306,17 @@ function createRelay(opts) {
 
         const checked = validateEnvelope(msg.envelope, ctx.nodeId);
         if (!checked.ok) {
-          ws.send(JSON.stringify({ type: 'error', code: checked.code, message: checked.error }));
+          // Carry the envelope id so the sender can tell WHICH queued message
+          // was refused. Without it a single poison envelope (too large, wrong
+          // kind) would sit at the head of the client's outbox forever with no
+          // way to drop just that one.
+          const rawId = msg.envelope && typeof msg.envelope === 'object' ? msg.envelope.id : null;
+          ws.send(JSON.stringify({
+            type: 'error',
+            code: checked.code,
+            message: checked.error,
+            id: typeof rawId === 'string' && rawId.length > 0 && rawId.length <= 128 ? rawId : null
+          }));
           return;
         }
         // Re-check the seat on every message: revocation is issued by a
