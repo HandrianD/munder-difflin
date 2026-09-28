@@ -138,6 +138,37 @@ function isRelayKind(v: unknown): v is RelayEnvelopeKind {
   return typeof v === 'string' && (RELAY_ENVELOPE_KINDS as readonly string[]).includes(v);
 }
 
+/**
+ * Map a hive `MessageAct` onto the closed set of kinds the relay will carry.
+ *
+ * The envelope kind is a CAPABILITY class — it says which messages are allowed
+ * to leave this machine at all — not a restatement of the message. The
+ * authoritative `act` rides untouched inside `payload`, so the receiving floor
+ * reads exactly what the sender wrote.
+ *
+ *   request/query/propose  → ask          (these are the acts that require a reply)
+ *   agree/refuse           → reply        (the answer to one)
+ *   done                   → result       (work reported complete)
+ *   inform / anything new  → board.update (a notice; `inform` is what
+ *                                          normalize() defaults to, so it is
+ *                                          by far the common case)
+ */
+export function envelopeKindForAct(act: string): RelayEnvelopeKind {
+  switch (act) {
+    case 'request':
+    case 'query':
+    case 'propose':
+      return 'ask';
+    case 'agree':
+    case 'refuse':
+      return 'reply';
+    case 'done':
+      return 'result';
+    default:
+      return 'board.update';
+  }
+}
+
 function checkPayload(payload: unknown): { ok: true; bytes: number } | { ok: false; error: string } {
   let json: string;
   try {

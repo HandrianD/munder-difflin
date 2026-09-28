@@ -1629,6 +1629,13 @@ export class HiveManager {
       // delivery failure with neither bounce nor log, so the sender saw a routed
       // message and the mail simply ceased to exist. Record the drop beside the
       // hop-cap one and bounce to god, mirroring the undeliverable bounces above.
+      //
+      // With the relay on, "no local inbox" is the ordinary shape of "someone
+      // else's machine", so try that FIRST and only fall through to drop+bounce
+      // when the mirror declines it. The two must not both happen: reporting a
+      // machine as undeliverable while its mail is queued on the wire would be
+      // the same lie in the other direction.
+      if (this.mirrorRemote(msg, t)) { delivered.push(t); continue; }
       this.appendLog({ kind: 'drop', reason: 'no-inbox', from: msg.from, to: t, id: msg.id });
       if (t !== godId) {
         this.deliver({
@@ -1643,6 +1650,78 @@ export class HiveManager {
     // Main-process observer (e.g. the closing-time controller watching for the
     // team's ACKs and the god's COMPLETE). Best-effort, never breaks routing.
     try { this.routedObserver?.(msg, targets); } catch { /* observer error */ }
+    // A broadcast also belongs on the other machines — but only once, after the
+    // local fan-out above, and never for a message that itself came off the wire.
+    if (msg.to === 'broadcast') this.mirrorRemote(msg, null);
+  }
+
+  // ─── relay seam (Track B) ─────────────────────────────────────────────────
+
+  /** Message ids that arrived FROM the relay. Bounded: ids are unique, so the
+   *  only job here is to outlive one echo round trip (sub-second), and 2000
+   *  entries is far more than a reconnect burst would ever need. */
+  private readonly foreignOrigin = new Set<string>();
+
+  private markForeignOrigin(id: string): void {
+    this.foreignOrigin.add(id);
+    if (this.foreignOrigin.size > 2000) {
+      const oldest = this.foreignOrigin.values().next();
+      if (!oldest.done) this.foreignOrigin.delete(oldest.value);
+    }
+  }
+
+  /** Outbound hook: handed mail this machine cannot deliver locally because the
+   *  recipient lives on another machine. Returns true when the mail was taken.
+   *
+   *  Set by src/main/index.ts once the relay client exists. Null (the default
+   *  and every non-Teams install) means "no relay", and routing behaves exactly
+   *  as it did before Track B. */
+  private relayMirror: ((msg: HiveMessage, toAgent: string | null) => boolean) | null = null;
+  setRelayMirror(cb: ((msg: HiveMessage, toAgent: string | null) => boolean) | null): void {
+    this.relayMirror = cb;
+  }
+
+  /**
+   * Try to hand one message to the relay for delivery on another machine.
+   *
+   * Two refusals are load-bearing:
+   *
+   *  - **No mirror installed** (relay off) → fall through to the local drop +
+   *    bounce, which is the behavior this code has always had.
+   *  - **Foreign origin** → the message arrived FROM the relay. Echoing it back
+   *    would bounce forever between the two machines (A mirrors → B routes → B
+   *    mirrors → A routes → …), and neither side could ever tell its own mail
+   *    from the other's. Recording the inbound id is what breaks the cycle.
+   *
+   * Anything that throws is treated as "not taken" and swallowed: a transport
+   * hiccup must never break local routing, which is the guarantee the hive
+   * makes to everything else in this process.
+   */
+  private mirrorRemote(msg: HiveMessage, toAgent: string | null): boolean {
+    if (!this.relayMirror) return false;
+    if (this.foreignOrigin.has(msg.id)) return false;
+    try {
+      return this.relayMirror(msg, toAgent) === true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Take a message that arrived FROM the relay and route it locally. This is
+   *  the inbound half of the seam.
+   *
+   *  The foreign-origin stamp happens BEFORE routing, because routing ends at
+   *  the outbound mirror — after it, the peer's mail would be echoed straight
+   *  back. {@link send} is deliberately not used: it would treat the peer's
+   *  message as ours to originate. The id, conversation and timestamp all
+   *  survive {@link normalize}, so a duplicate arriving twice is the same file
+   *  in the inbox twice — an overwrite, not two messages. */
+  receiveRemote(partial: Partial<HiveMessage>, from = 'system'): HiveMessage {
+    const msg = this.normalize(partial, from);
+    this.markForeignOrigin(msg.id);
+    this.routeMessage(msg);
+    this.commit(`hive: remote msg ${msg.from}→${msg.to} (${msg.act})`);
+    return msg;
   }
 
   /** Observer invoked for EVERY routed message with its resolved targets.
